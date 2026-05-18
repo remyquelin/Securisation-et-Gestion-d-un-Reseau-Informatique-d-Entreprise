@@ -3,15 +3,18 @@
 
 #include <string>
 
+// ─── Classe IoT_Client ────────────────────────────────────────────────────────
 class IoT_Client {
 private:
-    std::string serverURL;
+    int         port;
+    std::string serverIP;
 
 public:
-    IoT_Client();
+    IoT_Client(const std::string& serverIP, int port);
     ~IoT_Client();
-    bool connect(); // Vérifie si le serveur répond
-    void sendPayload(std::string data); // Envoie les données (temp et porte)
+
+    bool connect();                        // Vérifie que le serveur est joignable
+    void sendPayload(std::string payload); // Envoie les données via HTTP GET
 };
 
 #endif

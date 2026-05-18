@@ -1,60 +1,33 @@
-///////////////////////////////////////////////////////////
-//  Sensor.h
-//  Implementation of the Class Sensor
-//  Created on:      30-mars-2026 15:29:37
-//  Original author: ASGA
-///////////////////////////////////////////////////////////
-
-#if !defined(EA_FC9BBF63_86D2_43cf_9EA4_7D568D834937__INCLUDED_)
-#define EA_FC9BBF63_86D2_43cf_9EA4_7D568D834937__INCLUDED_
+#ifndef SENSOR_H
+#define SENSOR_H
 
 #include <string>
 
-
-class Sensor
-{
-
-public:
-    Sensor();
-	Sensor(int pin, const std::string &type);
-	virtual ~Sensor();
-
-	virtual void begin();
-    virtual float readValue();
-
-	void setPin(int p) { pin = p; }
-	int getPin() const { return pin; }
-
-	void setType(const std::string &t) { type = t; }
-	const std::string &getType() const { return type; }
-
-	void setValue(float v) { value = v; }
-	float getValue() const { return value; }
-
+// ─── Classe de base : Sensor ────────────────────────────────────────────────
+class Sensor {
 protected:
-	int pin;
+    int         pin;
+    std::string type;
 
-private:
-	std::string type;
-	float value;
-
-};
-
-// Concrete sensor types (simulated). Implementations are in Sensor.cpp
-class DHT22Sensor : public Sensor {
 public:
-	DHT22Sensor(int p);
-	void begin() override;
-	float readValue() override;
-    float getHumidity() const;
-private:
-	float humidity;
+    Sensor(int pin, const std::string& type);
+    virtual ~Sensor();
+
+    virtual float readValue() = 0; // méthode virtuelle pure
 };
 
-class DoorSensor : public Sensor {
+// ─── Sous-classe : Sensor_DHT22 ─────────────────────────────────────────────
+class Sensor_DHT22 : public Sensor {
 public:
-	DoorSensor(int p);
-	void begin() override;
-	float readValue() override;
+    Sensor_DHT22(int pin);
+    float readValue() override; // retourne la température en °C
 };
-#endif // !defined(EA_FC9BBF63_86D2_43cf_9EA4_7D568D834937__INCLUDED_)
+
+// ─── Sous-classe : Sensor_Porte ─────────────────────────────────────────────
+class Sensor_Porte : public Sensor {
+public:
+    Sensor_Porte(int pin);
+    float readValue() override; // retourne 1.0 (ouverte) ou 0.0 (fermée)
+};
+
+#endif
