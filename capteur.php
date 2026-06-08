@@ -15,11 +15,9 @@
 
        /************** MAIN CONTENT ******************/
 .main-content {
-    flex: 1;
     margin-left: 250px;
-    padding: clamp(1rem, 3vw, 3rem);
-    display: flex;
-    flex-direction: column;
+    padding: 2rem 3rem;
+    width: 100%;
 }
 
 /************** HEADER ******************/
@@ -78,15 +76,46 @@
     display: block;
 }
 
+/**************** HUMIDITÉ ****************/
+.humidity-main {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.humidity-value {
+    font-size: clamp(1.8rem, 2.5vw, 2.2rem);
+    font-weight: 700;
+    color: #111827;
+    line-height: 1;
+}
+
+.humidity-sparkline {
+    width: 100%;
+    height: clamp(150px, 20vw, 200px);
+}
+
+.humidity-sparkline canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+}
+
 /************** SENSOR CARDS ******************/
 .sensor-card {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: clamp(15px, 2vw, 25px);
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    width: 100%;
 }
 
 .sensor-card .card {
     width: 100%;
+}
+
+.door-card {
+    grid-column: 1 / -1;
+    max-width: 50%;
 }
 
 /**************** RESPONSIVE ****************/
@@ -100,6 +129,10 @@
     .main-content {
         margin-left: 200px;
     }
+
+    .sensor-card {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 /* Petit écran */
@@ -107,6 +140,10 @@
 
     .sensor-card {
         grid-template-columns: 1fr;
+    }
+
+    .door-card {
+        max-width: 100%;
     }
 }
 
@@ -132,6 +169,10 @@
         height: 150px;
     }
 
+    .humidity-sparkline {
+        height: 150px;
+    }
+
     .menu-item {
         font-size: 0.85rem;
     }
@@ -143,10 +184,6 @@
 
 <body>
     <div id="sidebar-container"></div>
-
-<main class="content">
-    <!-- contenu spécifique à la page -->
-</main>
 
 <?php include 'sidebar.php'; ?>
 
@@ -166,9 +203,12 @@
             </div>
             <div class="card">
                 <h3>Humidité</h3>
-                <p id="humidity-value">-- %</p>
+                <div class="humidity-main">
+                    <div id="humidity-value" class="humidity-value">-- %</div>
+                    <div id="humidity-graph" class="humidity-sparkline"><canvas id="humidity-sparkline"></canvas></div>
+                </div>
             </div>
-            <div class="card">
+            <div class="card door-card">
                 <h3>Capteur d'ouverture de porte</h3>
                 <p id="door-value">--</p>
             </div>
@@ -177,7 +217,7 @@
     </main>
 
     <script>
-        // --- GRAPHIQUE ---
+        // --- GRAPHIQUE TEMPÉRATURE ---
         const ctx = document.getElementById('temperature-sparkline').getContext('2d');
         const tempChart = new Chart(ctx, {
             type: 'line',
@@ -198,6 +238,32 @@
                         display: true,
                         grid: { color: 'rgba(0,0,0,0.06)' },
                         ticks: { callback: function(value) { return value + ' °C'; } }
+                    }
+                }
+            }
+        });
+
+        // --- GRAPHIQUE HUMIDITÉ ---
+        const humCtx = document.getElementById('humidity-sparkline').getContext('2d');
+        const humChart = new Chart(humCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    data: [], borderColor: '#27ae60', borderWidth: 2,
+                    tension: 0.4, pointRadius: 0, fill: true,
+                    backgroundColor: 'rgba(39, 174, 96, 0.1)'
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { display: false },
+                    y: {
+                        display: true,
+                        grid: { color: 'rgba(0,0,0,0.06)' },
+                        ticks: { callback: function(value) { return value + ' %'; } }
                     }
                 }
             }
@@ -257,6 +323,24 @@
             // Humidité
             if(data.humidity !== undefined) {
                 document.getElementById('humidity-value').innerText = data.humidity + " %";
+                humChart.data.labels.push(now);
+                humChart.data.datasets[0].data.push(data.humidity);
+                if(humChart.data.labels.length > 15) { 
+                    humChart.data.labels.shift(); 
+                    humChart.data.datasets[0].data.shift(); 
+                }
+
+                // Ajuste dynamiquement l'échelle Y
+                const vals = humChart.data.datasets[0].data;
+                if (vals.length > 0) {
+                    const minV = Math.min(...vals);
+                    const maxV = Math.max(...vals);
+                    const padding = 2;
+                    humChart.options.scales.y.min = Math.floor(minV - padding);
+                    humChart.options.scales.y.max = Math.ceil(maxV + padding);
+                }
+
+                humChart.update('none');
             }
 
             // Porte

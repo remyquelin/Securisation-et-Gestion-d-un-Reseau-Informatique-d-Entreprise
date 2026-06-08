@@ -1,20 +1,28 @@
 #ifndef IOT_CLIENT_H
 #define IOT_CLIENT_H
 
-#include <string>
+// =============================================================================
+// IoT_Client.h
+// Déclarations des fonctions d'envoi de données vers le serveur.
+// On garde ce fichier séparé pour que tu puisses facilement activer/désactiver
+// la partie réseau sans toucher au reste du code.
+// =============================================================================
 
-// ─── Classe IoT_Client ────────────────────────────────────────────────────────
-class IoT_Client {
-private:
-    int         port;
-    std::string serverIP;
+#include <string> // Pour std::string
 
-public:
-    IoT_Client(const std::string& serverIP, int port);
-    ~IoT_Client();
 
-    bool connect();                        // Vérifie que le serveur est joignable
-    void sendPayload(std::string payload); // Envoie les données via HTTP GET
-};
+// -----------------------------------------------------------------------------
+// DÉCLARATIONS DES FONCTIONS (définitions dans IoT_Client.cpp)
+// -----------------------------------------------------------------------------
 
-#endif
+// Tente une connexion au serveur et affiche un message de confirmation.
+// Retourne true si le serveur est joignable, false sinon.
+bool connecter_serveur();
+
+// Envoie une chaîne de données (payload) au serveur via une requête HTTP GET.
+// Exemple de payload : "door=1&temp=22.5&hum=58.3"
+// La fonction construit l'URL complète et utilise cURL pour l'envoyer.
+void envoyer_donnees(const std::string& payload);
+
+
+#endif // IOT_CLIENT_H

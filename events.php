@@ -200,6 +200,7 @@
                     <option value="">Tous les types</option>
                     <option value="Temperature">Temperature</option>
                     <option value="Porte_Baie">Porte</option>
+                    <option value="Porte local">Porte local</option>
                 </select>
                 <button class="sort-button active" id="dateButton" onclick="toggleDateSort(this)" style="margin-left: auto;">Ancienne date</button>
                 <button onclick="resetFilters()">Reinitialiser</button>
@@ -215,8 +216,8 @@
                 $pdo = getPDO();
                 $dbConnected = true;
                 
-                // Récupération des données des capteurs
-                $stmt = $pdo->query("SELECT id, timestamp as event_time, sensor_name as event_type, value as message FROM sensors_data ORDER BY timestamp DESC LIMIT 500");
+                // Récupération des données des capteurs (excluant Porte_local qui est géré par event_journal)
+                $stmt = $pdo->query("SELECT id, timestamp as event_time, sensor_name as event_type, value as message FROM sensors_data WHERE sensor_name NOT IN ('Porte_local') ORDER BY timestamp DESC LIMIT 500");
                 $sensorAlerts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 
                 // Traitement des données pour les formater correctement
@@ -235,7 +236,8 @@
                 
                 // Récupération des événements explicitement enregistrés
                 try {
-                    $stmtEvents = $pdo->query("SELECT id, event_time, event_type, message, severity FROM events ORDER BY event_time DESC LIMIT 500");
+                    $sql = "SELECT id, timestamp AS event_time, CASE WHEN event_description LIKE 'Porte local %' OR event_description LIKE 'Porte du local %' THEN 'Porte local' ELSE 'Journal' END AS event_type, TRIM(REPLACE(REPLACE(event_description, 'Porte local', ''), 'Porte du local', '')) AS message, severity FROM event_journal ORDER BY timestamp DESC LIMIT 500";
+                    $stmtEvents = $pdo->query($sql);
                     $eventAlerts = $stmtEvents->fetchAll(PDO::FETCH_ASSOC);
                     $alerts = array_merge($eventAlerts, $alerts);
                     usort($alerts, function($a, $b) {
@@ -245,7 +247,7 @@
                     });
                     $alerts = array_slice($alerts, 0, 500); // Limiter à 500
                 } catch (Exception $e) {
-                    // Si la table events n'existe pas, continuer avec les données des capteurs
+                    // Si la table event_journal n'existe pas, continuer avec les données des capteurs
                 }
             } catch (Exception $e) {
                 $dbConnected = false;
@@ -273,7 +275,10 @@
                                 // Format: value est la température
                                 $displayMessage = number_format((float)$a['message'], 1, '.', '') . ' °C';
                             } elseif ($type === 'Porte_Baie' || $type === 'Porte') {
-                                // Format: 0 = fermée, 1 = ouverte
+                                // Format: 1 = ouverte, 0 = fermée
+                                $displayMessage = ($a['message'] == 1 || strtoupper($a['message']) === 'OUVERTE') ? ' OUVERTE' : ' FERMÉE';
+                            } elseif ($type === 'Porte_local') {
+                                // Format: 1 = ouverte, 0 = fermée
                                 $displayMessage = ($a['message'] == 1 || strtoupper($a['message']) === 'OUVERTE') ? ' OUVERTE' : ' FERMÉE';
                             }
                             

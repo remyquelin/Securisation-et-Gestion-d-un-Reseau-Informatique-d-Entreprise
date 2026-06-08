@@ -121,7 +121,7 @@ body {
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <script>
 const video = document.getElementById('video');
-const hlsUrl = 'http://192.168.1.11/hls/playlist.m3u8';
+const hlsUrl = 'http://192.168.1.11/hls/playlist.m3u8?t=' + new Date().getTime();
 
 function playHLS() {
     if (Hls.isSupported()) {

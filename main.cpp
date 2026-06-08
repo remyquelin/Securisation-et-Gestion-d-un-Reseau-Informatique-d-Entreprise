@@ -1,57 +1,136 @@
-#include "Sensor.h"
-#include "IoT_Client.h"
-#include <iostream>
-#include <cmath>
-#include <unistd.h> // usleep
+// =============================================================================
+// main.cpp
+// Point d'entrée du programme. Contient la boucle principale.
+// Utilise les classes Sensor_DHT22 et Sensor_Porte avec héritage.
+// =============================================================================
+
+#include "Sensor.h"       // Pour Sensor_DHT22 et Sensor_Porte
+#include "IoT_Client.h"   // Pour connecter_serveur() et envoyer_donnees()
+#include <chrono>         // Pour la gestion du temps et des intervalles
+#include <iostream>       // Pour std::cout
+#include <string>         // Pour std::string et std::to_string()
+#include <unistd.h>       // Pour sleep() (pause en secondes)
+#include <wiringPi.h>     // Pour wiringPiSetup()
+
+
+// =============================================================================
+// DÉFINITION DES BROCHES
+// Numérotation wiringPi (PAS GPIO BCM).
+// Tape "gpio readall" dans le terminal pour voir la correspondance.
+// =============================================================================
+const int BROCHE_DHT22 = 7;   // wiringPi 7 = GPIO 4
+const int BROCHE_PORTE = 0;   // wiringPi 0 = GPIO 17
+
 
 int main() {
-    // ── Instanciation des capteurs et du client ───────────────────────────────
-    // Pin wiringPi 0 = GPIO 17 physique  → capteur de porte (reed switch)
-    // Pin wiringPi 7 = GPIO 11 physique  → capteur DHT22
-    Sensor_Porte  maPorte(0);
-    Sensor_DHT22  monAir(7);
-    IoT_Client    monClient("192.168.1.11", 80);
 
-    monClient.connect();
+    // -------------------------------------------------------------------------
+    // Initialisation de wiringPi
+    // Doit être appelée UNE SEULE FOIS au démarrage, avant tout digitalWrite/Read.
+    // Nécessite d'être lancé avec 'sudo'.
+    // -------------------------------------------------------------------------
+    if (wiringPiSetup() == -1) {
+        std::cout << "[ERREUR] Impossible d'initialiser wiringPi !" << std::endl;
+        std::cout << "         Relancez avec : sudo ./capteurs_bts" << std::endl;
+        return 1; // On quitte avec un code d'erreur
+    }
 
-    // ── Variables pour détecter les changements ───────────────────────────────
-    float dernierEtatPorte = -1.0f;
-    float derniereTemp     = -100.0f;
-    const float SEUIL_TEMP = 0.5f; // Envoi seulement si variation ≥ 0.5 °C
+    // DÉLAI DE STABILISATION : Le DHT22 a besoin de temps pour se réveiller
+    // et entrer en mode de communication après le démarrage du Raspberry Pi.
+    // Sans ce délai, la première lecture timeout toujours.
+    sleep(2);
 
-    std::cout << "--- Système IoT : Surveillance Active ---" << std::endl;
+    // Connexion au serveur (facultatif pour l'instant, peut être commenté)
+    bool serveur_disponible = connecter_serveur();
+    if (!serveur_disponible) {
+        std::cout << "[IoT] Serveur indisponible, les donnees ne seront pas envoyees." << std::endl;
+    }
+
+    // -------------------------------------------------------------------------
+    // Création et initialisation des capteurs (instances des classes)
+    // -------------------------------------------------------------------------
+    Sensor_DHT22 dht22;
+    Sensor_Porte porte;
+    
+    dht22.initialiser(BROCHE_DHT22);
+    porte.initialiser(BROCHE_PORTE);
+    porte.setInversion(true); // Inversion activée car le capteur de porte est inversé sur ton montage
+
+    std::cout << "=============================================" << std::endl;
+    std::cout << "   Systeme BTS - Surveillance Active         " << std::endl;
+    std::cout << "   DHT22 -> broche wiringPi " << BROCHE_DHT22   << std::endl;
+    std::cout << "   Porte -> broche wiringPi " << BROCHE_PORTE   << std::endl;
+    std::cout << "=============================================" << std::endl;
+
+    // -------------------------------------------------------------------------
+    // Envoi toutes les 5 minutes, et immédiatement en cas de changement d'état
+    // du capteur de porte.
+    // On ne relit le DHT22 que toutes les 2 secondes minimum.
+    // -------------------------------------------------------------------------
+    auto dernier_envoi = std::chrono::steady_clock::now() - std::chrono::seconds(300);
+    auto dernier_lecture_dht = std::chrono::steady_clock::now() - std::chrono::seconds(2);
+    ResultatDHT22 derniere_mesure_valide = { 0.0f, 0.0f, false };
+    
+    // Première lecture pour initialiser l'état précédent
+    porte.lire();
+    bool etat_porte_precedent = porte.estOuverte();
 
     while (true) {
-        // Lecture réelle des capteurs
-        float porte = maPorte.readValue();
-        float temp  = monAir.readValue();
+        // Lire l'état de la porte
+        porte.lire();
+        bool porte_ouverte = porte.estOuverte();
+        bool changement_porte = (porte_ouverte != etat_porte_precedent);
+        auto maintenant = std::chrono::steady_clock::now();
+        bool intervalle_ecoule = (maintenant - dernier_envoi) >= std::chrono::seconds(300);
 
-        // Si le DHT22 échoue (NAN), on garde la dernière température connue
-        if (std::isnan(temp)) {
-            temp = (derniereTemp == -100.0f) ? 21.0f : derniereTemp;
+        if (changement_porte || intervalle_ecoule) {
+            std::cout << "\n--- Envoi de donnees "
+                      << (changement_porte ? "(changement de porte)" : "(intervalle 5 minutes)")
+                      << " ---" << std::endl;
+            std::cout << "Porte    : " << (porte_ouverte ? "OUVERTE" : "FERMEE") << std::endl;
+
+            bool lecture_dht = (maintenant - dernier_lecture_dht) >= std::chrono::seconds(2);
+            ResultatDHT22 mesure = derniere_mesure_valide;
+
+            if (lecture_dht) {
+                dht22.lire();
+                mesure = dht22.obtenirMesure();
+                dernier_lecture_dht = maintenant;
+                if (mesure.succes) {
+                    derniere_mesure_valide = mesure;
+                } else if (derniere_mesure_valide.succes) {
+                    std::cout << "[INFO] Utilisation de la derniere mesure DHT valide." << std::endl;
+                    mesure = derniere_mesure_valide;
+                }
+            } else if (derniere_mesure_valide.succes) {
+                std::cout << "[INFO] Lecture DHT reportee; utilisation de la derniere mesure valide." << std::endl;
+            }
+
+            if (mesure.succes) {
+                std::cout << "Temp     : " << mesure.temperature << " C" << std::endl;
+                std::cout << "Humidite : " << mesure.humidite    << " %" << std::endl;
+            } else {
+                std::cout << "Temp     : Lecture echouee ou indisponible." << std::endl;
+                std::cout << "Humidite : Lecture echouee ou indisponible." << std::endl;
+            }
+
+            std::string payload = "door=" + std::to_string(porte_ouverte ? 1 : 0);
+            if (mesure.succes) {
+                payload += "&temp=" + std::to_string(mesure.temperature);
+                payload += "&hum="  + std::to_string(mesure.humidite);
+            }
+
+            if (serveur_disponible) {
+                envoyer_donnees(payload);
+            } else {
+                std::cout << "[IoT] Envoi ignore - serveur non accessible." << std::endl;
+            }
+
+            dernier_envoi = maintenant;
+            etat_porte_precedent = porte_ouverte;
         }
 
-        // Détection de changement
-        bool porteAChange = (porte != dernierEtatPorte);
-        bool tempAChange  = (std::abs(temp - derniereTemp) >= SEUIL_TEMP);
-
-        if (porteAChange || tempAChange) {
-            std::cout << "\n[EVENT] Changement détecté :" << std::endl;
-            std::cout << "  Porte : " << (porte > 0.5f ? "OUVERTE" : "FERMEE") << std::endl;
-            std::cout << "  Temp  : " << temp << " °C" << std::endl;
-
-            // Envoi : post_data.php?temp=XX.X&door=Y
-            std::string payload = "temp=" + std::to_string(temp)
-                                + "&door=" + std::to_string((int)porte);
-            monClient.sendPayload(payload);
-
-            dernierEtatPorte = porte;
-            derniereTemp     = temp;
-
-            std::cout << "[OK] Données envoyées." << std::endl;
-        }
-
-        usleep(500000); // 500 ms
+        sleep(1);
     }
 
     return 0;
